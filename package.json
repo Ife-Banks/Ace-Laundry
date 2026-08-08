@@ -1,0 +1,16 @@
+{
+  "name": "ace-laundry",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:backend": "npm -C backend run dev",
+    "dev:app": "npm -C App run dev",
+    "build": "npm -C backend run build && npm -C App run build",
+    "test": "npm -C backend test",
+    "typecheck": "npm -C backend run typecheck && npm -C App run typecheck",
+    "db:generate": "npm -C backend run db:generate",
+    "db:migrate": "npm -C backend run db:migrate",
+    "db:seed": "npm -C backend run db:seed",
+    "db:studio": "npm -C backend run db:studio"
+  }
+}

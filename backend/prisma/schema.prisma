@@ -1,0 +1,165 @@
+// Ace Laundry — data model (per docs/01-product-plan.md §3)
+//
+// MONEY UNIT: all money fields (rate_applied, cost, adjustment, final_cost) are
+// stored as INTEGER WHOLE NAIRA (NGN). Never floats, anywhere money touches
+// storage, computation, or API payloads to/from the payment gateway.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ServiceType {
+  wash_and_fold
+  iron_only
+}
+
+enum PickupWindow {
+  morning
+  afternoon
+  evening
+}
+
+enum DeliveryWindow {
+  same_day
+  next_day
+  custom
+}
+
+enum PaymentMethod {
+  transfer
+  cash
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  unpaid
+  failed
+}
+
+enum OrderStatus {
+  booked
+  picked_up
+  in_progress
+  ready_for_delivery
+  delivered
+  cancelled
+}
+
+model Customer {
+  id          String   @id @default(uuid())
+  phone       String   @unique
+  whatsapp_ok Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  orders Order[]
+}
+
+model Order {
+  id                String         @id @default(uuid())
+  customer_id       String
+  service_type      ServiceType
+  item_count        Int            @db.Integer
+  rate_applied      Int            @db.Integer // rate at time of order; never recomputed
+  cost              Int            @db.Integer // item_count * rate_applied, stored not derived
+  adjustment        Int            @default(0) // can be negative; same unit as cost
+  adjustment_note   String?
+  final_cost        Int            @db.Integer // cost + adjustment, stored not derived
+  pickup_address    String
+  pickup_window     PickupWindow
+  delivery_window   DeliveryWindow
+  delivery_date     DateTime? // only set when delivery_window = 'custom'
+  payment_method    PaymentMethod
+  payment_status    PaymentStatus  @default(pending)
+  payment_reference String? // gateway tx/order ref, transfer orders only
+  status            OrderStatus    @default(booked)
+  status_updated_at DateTime       @default(now())
+  note              String? // cancellation reason or operator annotation
+  created_at        DateTime       @default(now())
+
+  customer      Customer @relation(fields: [customer_id], references: [id])
+  notifications NotificationLog[]
+  status_logs   OrderStatusLog[]
+  webhook_events WebhookEvent[]
+
+  @@index([customer_id])
+  @@index([status])
+  @@index([payment_status])
+  @@index([payment_reference])
+}
+
+// Single-row settings table. id is pinned to 1 so the row can be upserted.
+model RateConfig {
+  id            Int  @id @default(1)
+  wash_and_fold Int  @db.Integer // naira per item
+  iron_only     Int  @db.Integer // naira per item
+}
+
+// Audit trail for notification dispatch attempts (and webhook events later).
+model NotificationLog {
+  id         String   @id @default(uuid())
+  order_id   String?
+  recipient  String
+  channel    String // whatsapp | sms | email
+  event      String
+  status     String // sent | failed | skipped
+  error      String?
+  created_at DateTime @default(now())
+
+  order Order? @relation(fields: [order_id], references: [id])
+
+  @@index([order_id])
+}
+
+// One row per fulfillment-status transition, in order. Drives the customer
+// timeline (each reached state shows its timestamp) and serves as an audit trail.
+model OrderStatusLog {
+  id         String     @id @default(uuid())
+  order_id   String
+  status     OrderStatus
+  created_at DateTime   @default(now())
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+
+  @@index([order_id])
+}
+
+// One-time passcode for customer order-history access (docs/05 §2.6). Codes
+// are stored hashed (never plaintext), are single-use, and short-lived. The
+// phone rate limit (3 per 15 min) is enforced in the OTP service against
+// created_at rows for that phone.
+model OtpCode {
+  id         String   @id @default(uuid())
+  phone      String
+  code_hash  String
+  consumed   Boolean  @default(false)
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  @@index([phone])
+  @@index([created_at])
+}
+
+// Every payment-gateway webhook we receive, verified or not — the debugging
+// trail for "I paid but it still shows pending". gateway_event_key is the
+// idempotency key (gateway:transaction_id).
+model WebhookEvent {
+  id               String   @id @default(uuid())
+  gateway          String
+  gateway_event_key String  @unique
+  order_id         String?
+  event_type       String?
+  status           String // received | processed | duplicate | ignored_* | unverified
+  payload          Json?
+  created_at       DateTime @default(now())
+
+  order Order? @relation(fields: [order_id], references: [id], onDelete: Cascade)
+
+  @@index([order_id])
+  @@index([created_at])
+}
