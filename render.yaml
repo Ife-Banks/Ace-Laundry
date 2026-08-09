@@ -1,19 +1,23 @@
-# Render Blueprint for Ace Laundry.
+# Render Blueprint for the Ace Laundry backend API.
 # Docs: https://render.com/docs/blueprint-spec
+#
+# The Next.js frontend deploys to Vercel (repo subdirectory: App). This file
+# provisions only the API service on Render.
 #
 # To deploy:
 #   1. Push this file to GitHub (main).
 #   2. In the Render dashboard choose "New" -> "Blueprint" and connect this repo.
-#   3. Render provisions both services below. Then fill the sync:false secrets
-#      (marked below) from backend/.env in each service's Environment dashboard.
-#   4. Run "npx prisma migrate deploy" against the production database if the
-#      build step did not already apply it.
+#   3. Render provisions ace-laundry-api. Fill every "sync: false" secret from
+#      backend/.env in the service's Environment dashboard.
+#   4. Set FRONTEND_URL and SL_ORIGIN to the deployed Vercel URL (a full https
+#      URL, or a bare host is also accepted and the API prefixes https://).
+#   5. In the Vercel project set NEXT_PUBLIC_API_URL to this API's URL, e.g.
+#      https://ace-laundry-api.onrender.com
 #
 # Secrets are intentionally NOT committed here. Each "sync: false" var must be
 # set once in the Render dashboard (values come from backend/.env).
 
 services:
-  # -------------------- Backend API (Express + Prisma) --------------------
   - type: web
     name: ace-laundry-api
     runtime: node
@@ -50,10 +54,7 @@ services:
       - key: SL_API_KEY
         sync: false
       - key: SL_ORIGIN
-        fromService:
-          name: ace-laundry-web
-          type: web
-          property: url
+        sync: false
       - key: SL_FROM
         sync: false
       - key: WHATSAPP_PHONE_NUMBER_ID
@@ -67,25 +68,4 @@ services:
       - key: TERMII_SENDER_ID
         sync: false
       - key: FRONTEND_URL
-        fromService:
-          name: ace-laundry-web
-          type: web
-          property: url
-
-  # -------------------- Frontend (Next.js) --------------------
-  - type: web
-    name: ace-laundry-web
-    runtime: node
-    rootDir: App
-    plan: free
-    buildCommand: npm install && npm run build
-    startCommand: npm start
-    autoDeploy: true
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: NEXT_PUBLIC_API_URL
-        fromService:
-          name: ace-laundry-api
-          type: web
-          property: url
+        sync: false
