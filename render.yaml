@@ -1,0 +1,91 @@
+# Render Blueprint for Ace Laundry.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# To deploy:
+#   1. Push this file to GitHub (main).
+#   2. In the Render dashboard choose "New" -> "Blueprint" and connect this repo.
+#   3. Render provisions both services below. Then fill the sync:false secrets
+#      (marked below) from backend/.env in each service's Environment dashboard.
+#   4. Run "npx prisma migrate deploy" against the production database if the
+#      build step did not already apply it.
+#
+# Secrets are intentionally NOT committed here. Each "sync: false" var must be
+# set once in the Render dashboard (values come from backend/.env).
+
+services:
+  # -------------------- Backend API (Express + Prisma) --------------------
+  - type: web
+    name: ace-laundry-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install && npx prisma generate && npm run build && npx prisma migrate deploy
+    startCommand: npm start
+    healthCheckPath: /public/config
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render injects PORT automatically; env.ts reads it.
+      - key: DATABASE_URL
+        sync: false
+      - key: OPERATOR_PASSWORD
+        sync: false
+      - key: OPERATOR_SESSION_SECRET
+        sync: false
+      - key: BUSINESS_PHONE
+        sync: false
+      - key: FLUTTERWAVE_PUBLIC_KEY
+        sync: false
+      - key: FLUTTERWAVE_SECRET_KEY
+        sync: false
+      - key: FLUTTERWAVE_SECRET_HASH
+        sync: false
+      - key: FLUTTERWAVE_PAYMENT_EMAIL
+        sync: false
+      - key: FLUTTERWAVE_ENV
+        value: test
+      - key: OPERATOR_EMAIL
+        sync: false
+      - key: SL_API_KEY
+        sync: false
+      - key: SL_ORIGIN
+        fromService:
+          name: ace-laundry-web
+          type: web
+          property: url
+      - key: SL_FROM
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: TERMII_API_KEY
+        sync: false
+      - key: TERMII_SENDER_ID
+        sync: false
+      - key: FRONTEND_URL
+        fromService:
+          name: ace-laundry-web
+          type: web
+          property: url
+
+  # -------------------- Frontend (Next.js) --------------------
+  - type: web
+    name: ace-laundry-web
+    runtime: node
+    rootDir: App
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          name: ace-laundry-api
+          type: web
+          property: url
