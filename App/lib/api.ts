@@ -22,6 +22,7 @@ export interface RateConfig {
 export interface Customer {
   id: string;
   phone: string;
+  email: string | null;
   whatsapp_ok: boolean;
   created_at: string;
 }
@@ -35,6 +36,7 @@ export interface OrderStatusLog {
 
 export interface CreateOrderInput {
   phone: string;
+  email: string;
   whatsapp_ok?: boolean;
   service_type: ServiceType;
   item_count: number;

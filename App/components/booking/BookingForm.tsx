@@ -21,6 +21,7 @@ const formatNaira = (n: number) => `₦${n.toLocaleString("en-NG")}`;
 
 const normalizePhone = (raw: string) => raw.replace(/[\s-]/g, "").trim();
 const isValidPhone = (phone: string) => /^0\d{10}$/.test(phone);
+const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
 const MAX_RETRIES = 3;
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,6 +40,7 @@ export interface ReorderPrefill {
   item_count?: number;
   pickup_address?: string;
   phone?: string;
+  email?: string;
   whatsapp_ok?: boolean;
 }
 
@@ -57,6 +59,7 @@ export default function BookingForm({ initialValues }: { initialValues?: Reorder
   const [deliveryWindow, setDeliveryWindow] = useState<DeliveryWindow>("next_day");
   const [deliveryDate, setDeliveryDate] = useState("");
   const [phone, setPhone] = useState(initialValues?.phone ?? "");
+  const [email, setEmail] = useState(initialValues?.email ?? "");
   const [whatsappOk, setWhatsappOk] = useState(initialValues?.whatsapp_ok ?? true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("transfer");
 
@@ -98,6 +101,9 @@ export default function BookingForm({ initialValues }: { initialValues?: Reorder
     if (!rates) next.serviceType = "Prices are still loading. Please wait a moment.";
     if (!isValidPhone(normalizePhone(phone))) {
       next.phone = "Enter a valid 11-digit phone number starting with 0.";
+    }
+    if (!isValidEmail(email)) {
+      next.email = "Enter a valid email address.";
     }
     if (pickupAddress.trim().length < 5) {
       next.pickupAddress = "Enter a pickup address (at least 5 characters).";
@@ -142,6 +148,7 @@ export default function BookingForm({ initialValues }: { initialValues?: Reorder
 
     const payload: CreateOrderInput = {
       phone: normalizePhone(phone),
+      email: email.trim(),
       whatsapp_ok: whatsappOk,
       service_type: serviceType,
       item_count: itemCount,
@@ -309,6 +316,24 @@ export default function BookingForm({ initialValues }: { initialValues?: Reorder
           ) : null}
         </Field>
 
+        <Field label="Email address" required htmlFor="email" hint="Status updates are sent here.">
+          <input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setErrors((p) => ({ ...p, email: "" }));
+            }}
+            placeholder="you@example.com"
+            className={inputClass}
+          />
+          {errors.email ? (
+            <p className="text-xs font-medium text-danger">{errors.email}</p>
+          ) : null}
+        </Field>
+
         <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-line bg-white px-3 py-2.5">
           <input
             type="checkbox"
@@ -318,7 +343,7 @@ export default function BookingForm({ initialValues }: { initialValues?: Reorder
           />
           <span className="text-sm text-ink">
             I can be reached on WhatsApp{" "}
-            <span className="text-xs text-ink-muted">(updates sent there if checked)</span>
+            <span className="text-xs text-ink-muted">(delivery notification sent there if checked)</span>
           </span>
         </label>
       </section>

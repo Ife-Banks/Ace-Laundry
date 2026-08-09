@@ -4,6 +4,7 @@ import { createOrderSchema } from "../lib/schemas.js";
 
 const validInput = {
   phone: "08123456789",
+  email: "customer@example.com",
   service_type: "wash_and_fold",
   item_count: 2,
   pickup_address: "12 Adeola Street",
@@ -62,5 +63,22 @@ describe("createOrderSchema", () => {
   it("rejects a malformed delivery_date", () => {
     const result = parse({ ...validInput, delivery_window: "custom", delivery_date: "10/08/2026" });
     assert.equal(result.success, false);
+  });
+
+  it("requires an email address", () => {
+    const { email: _email, ...withoutEmail } = validInput;
+    const result = parse(withoutEmail);
+    assert.equal(result.success, false);
+  });
+
+  it("rejects a malformed email address", () => {
+    const result = parse({ ...validInput, email: "not-an-email" });
+    assert.equal(result.success, false);
+  });
+
+  it("trims the email address", () => {
+    const result = parse({ ...validInput, email: "  customer@example.com  " });
+    assert.equal(result.success, true);
+    if (result.success) assert.equal(result.data.email, "customer@example.com");
   });
 });

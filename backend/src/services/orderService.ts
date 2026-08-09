@@ -32,7 +32,7 @@ export async function createOrder(db: PrismaClient, input: CreateOrderInput) {
     throw new HttpError(500, "rate_config_missing", "Pricing is not configured.");
   }
 
-  const customer = await findOrCreateCustomer(db, input.phone, input.whatsapp_ok);
+  const customer = await findOrCreateCustomer(db, input.phone, input.email, input.whatsapp_ok);
 
   const rateApplied = rateConfig[input.service_type];
   const cost = computeCost(input.item_count, rateApplied);

@@ -49,6 +49,10 @@ export default async function HomePage(props: PageProps<"/">) {
     if (typeof phone === "string" && /^0\d{10}$/.test(phone)) {
       prefill.phone = phone;
     }
+    const email = value("email");
+    if (typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      prefill.email = email;
+    }
     const whatsapp = value("whatsapp_ok");
     if (whatsapp === "true" || whatsapp === "false") {
       prefill.whatsapp_ok = whatsapp === "true";

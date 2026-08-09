@@ -54,6 +54,10 @@ enum OrderStatus {
 model Customer {
   id          String   @id @default(uuid())
   phone       String   @unique
+  // Required for NEW bookings (validated in the create-order API). Nullable in
+  // the DB so customers created before the email requirement keep working;
+  // their notifications skip email and fall back to WhatsApp/SMS.
+  email       String?
   whatsapp_ok Boolean  @default(true)
   created_at  DateTime @default(now())
 

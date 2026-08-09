@@ -9,6 +9,9 @@ export const phoneSchema = z
 export const createOrderSchema = z
   .object({
     phone: phoneSchema,
+    // Required for every new booking: it is the primary channel for
+    // fulfillment-status updates (docs/03 §5.1 email-primary design).
+    email: z.string().trim().email("Enter a valid email address."),
     whatsapp_ok: z.boolean().optional().default(true),
     service_type: z.enum(["wash_and_fold", "iron_only"]),
     item_count: z.number().int().min(1),

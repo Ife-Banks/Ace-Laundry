@@ -4,6 +4,8 @@ import { env } from "../lib/env.js";
 import {
   operatorNewOrderText,
   customerStatusChangedText,
+  customerStatusEmail,
+  customerTemplateParameters,
   operatorPaymentFailedText,
   shortTrackCode,
 } from "../services/notifications/notificationService.js";
@@ -25,7 +27,7 @@ const order = {
   delivery_window: "next_day",
   payment_method: "transfer",
   payment_status: "pending",
-  customer: { phone: "08012345678", whatsapp_ok: true },
+  customer: { phone: "08012345678", email: "customer@example.com", whatsapp_ok: true },
 };
 
 describe("notification message templates", () => {
@@ -35,6 +37,7 @@ describe("notification message templates", () => {
     assert.match(text, /wash and fold/i);
     assert.match(text, /₦1,500/);
     assert.match(text, /08012345678/);
+    assert.match(text, /customer@example\.com/);
     assert.match(text, /12 Allen Avenue/);
   });
 
@@ -49,6 +52,34 @@ describe("notification message templates", () => {
       const text = customerStatusChangedText({ ...order, status });
       assert.match(text, /Ace Laundry/i);
       assert.ok(text.length > 20);
+    }
+  });
+
+  it("builds the {{1}}..{{4}} template parameters in contract order", () => {
+    const params = customerTemplateParameters({
+      id: order.id,
+      status: "ready_for_delivery",
+      final_cost: 1500,
+    });
+    assert.equal(params.statusCopy, "your laundry is ready for delivery");
+    assert.equal(params.reference, shortTrackCode(order.id));
+    assert.equal(params.total, "₦1,500");
+    assert.match(params.trackUrl, new RegExp(`/s/${shortTrackCode(order.id)}$`));
+  });
+
+  it("builds a customer status email for every fulfillment state", () => {
+    for (const status of [
+      "picked_up",
+      "in_progress",
+      "ready_for_delivery",
+      "delivered",
+      "cancelled",
+    ]) {
+      const email = customerStatusEmail({ ...order, status });
+      assert.match(email.subject, new RegExp(shortTrackCode(order.id)));
+      assert.match(email.text, /Reference/);
+      assert.match(email.text, /₦1,500/);
+      assert.match(email.text, new RegExp(`/s/${shortTrackCode(order.id)}`));
     }
   });
 

@@ -36,6 +36,7 @@ function reorderHref(order: OrderWithCustomer): string {
     phone: order.customer.phone,
     whatsapp_ok: order.customer.whatsapp_ok ? "true" : "false",
   });
+  if (order.customer.email) params.set("email", order.customer.email);
   return `/?${params.toString()}`;
 }
 

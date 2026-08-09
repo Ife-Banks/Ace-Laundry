@@ -1,7 +1,9 @@
 // Notification Service (docs/05 §2.5). Subscribes to domain events and
 // dispatches to the right channel:
 //   - order.created        -> email operator (v1)
-//   - order.status_changed -> WhatsApp/SMS customer, channel by whatsapp_ok
+//   - order.status_changed -> email customer for every status (primary channel);
+//                             WhatsApp additionally on `delivered` when opted in;
+//                             SMS only as an email-failure fallback
 //   - payment.failed       -> email operator (overdue transfer order)
 //
 // Every dispatch attempt is written to the NotificationLog so a silently
@@ -11,7 +13,16 @@
 import { on } from "../../lib/events.js";
 import { env } from "../../lib/env.js";
 import { prisma } from "../../lib/db.js";
-import { sendEmail, sendSmsViaTermii, sendWhatsAppMessage } from "./providers.js";
+import {
+  sendEmail,
+  sendSmsViaTermii,
+  sendWhatsAppMessage,
+  sendWhatsAppTemplate,
+} from "./providers.js";
+import {
+  getWhatsappTemplateName,
+  getWhatsappTemplateLanguage,
+} from "../settingsService.js";
 
 type LogInput = {
   order_id?: string | null;
@@ -55,7 +66,7 @@ export function operatorNewOrderText(order: {
   delivery_window: string;
   payment_method: string;
   payment_status: string;
-  customer: { phone: string; whatsapp_ok: boolean };
+  customer: { phone: string; email?: string | null; whatsapp_ok: boolean };
 }): { subject: string; text: string } {
   return {
     subject: `New order ${shortId(order.id)} — Ace Laundry`,
@@ -68,9 +79,21 @@ export function operatorNewOrderText(order: {
       `Payment: ${order.payment_method} (${order.payment_status})`,
       `Pickup: ${order.pickup_address} (${order.pickup_window})`,
       `Delivery: ${order.delivery_window}`,
-      `Customer phone: ${order.customer.phone} (WhatsApp ${order.customer.whatsapp_ok ? "yes" : "no"})`,
+      `Customer: ${order.customer.phone}${order.customer.email ? ` (${order.customer.email})` : ""}`,
     ].join("\n"),
   };
+}
+
+const STATUS_COPY: Record<string, string> = {
+  picked_up: "your laundry has been picked up",
+  in_progress: "your laundry is now being processed",
+  ready_for_delivery: "your laundry is ready for delivery",
+  delivered: "your laundry has been delivered",
+  cancelled: "your order has been cancelled",
+};
+
+function statusPhrase(status: string): string {
+  return STATUS_COPY[status] ?? `your order status is now '${status}'`;
 }
 
 export function customerStatusChangedText(order: {
@@ -78,20 +101,58 @@ export function customerStatusChangedText(order: {
   status: string;
   final_cost: number;
 }): string {
-  const statusCopy: Record<string, string> = {
-    picked_up: "your laundry has been picked up",
-    in_progress: "your laundry is now being processed",
-    ready_for_delivery: "your laundry is ready for delivery",
-    delivered: "your laundry has been delivered",
-    cancelled: "your order has been cancelled",
-  };
-  const copy = statusCopy[order.status] ?? `your order status is now '${order.status}'`;
   return [
-    `Ace Laundry: ${copy}.`,
+    `Ace Laundry: ${statusPhrase(order.status)}.`,
     `Reference ${shortId(order.id)}. Total ${naira(order.final_cost)}.`,
     `Track: ${env.frontendUrl}/s/${shortTrackCode(order.id)}`,
     `Thank you for using Ace Laundry!`,
   ].join(" ");
+}
+
+/**
+ * The {{1}}..{{4}} values for the status-update WhatsApp template. Create the
+ * approved template with these placeholders in this exact order:
+ *   {{1}} status copy   {{2}} reference   {{3}} total   {{4}} track link
+ */
+export function customerTemplateParameters(order: {
+  id: string;
+  status: string;
+  final_cost: number;
+}): { statusCopy: string; reference: string; total: string; trackUrl: string } {
+  return {
+    statusCopy: statusPhrase(order.status),
+    reference: shortId(order.id),
+    total: naira(order.final_cost),
+    trackUrl: `${env.frontendUrl}/s/${shortTrackCode(order.id)}`,
+  };
+}
+
+/** The email sent to the customer for every fulfillment-status change. */
+export function customerStatusEmail(order: {
+  id: string;
+  status: string;
+  final_cost: number;
+}): { subject: string; text: string } {
+  const heading: Record<string, string> = {
+    picked_up: "Your laundry has been picked up",
+    in_progress: "Your laundry is now being processed",
+    ready_for_delivery: "Your laundry is ready for delivery",
+    delivered: "Your laundry has been delivered",
+    cancelled: "Your order has been cancelled",
+  };
+  const title = heading[order.status] ?? `Order status: ${order.status}`;
+  return {
+    subject: `${title} — ${shortId(order.id)}`,
+    text: [
+      title,
+      "",
+      `Reference: ${shortId(order.id)}`,
+      `Total: ${naira(order.final_cost)}`,
+      `Track your order: ${env.frontendUrl}/s/${shortTrackCode(order.id)}`,
+      "",
+      "Thank you for using Ace Laundry!",
+    ].join("\n"),
+  };
 }
 
 export function operatorPaymentFailedText(order: {
@@ -141,63 +202,98 @@ async function dispatchOperatorEmail(
   return result.ok ? "sent" : "failed";
 }
 
-async function dispatchCustomerMessage(
+/**
+ * Customer status notification (email-primary, docs/03 §5.1):
+ *   1. email the customer for every status change
+ *   2. on `delivered` only, ALSO WhatsApp when the customer opted in
+ *   3. if the email send failed, fall back to SMS so the customer still hears
+ * Returns the email-channel outcome ("sent" | "failed" | "skipped").
+ */
+async function dispatchCustomerStatus(
   orderId: string,
-  customer: { phone: string; whatsapp_ok: boolean },
-  text: string
+  order: { id: string; status: string; final_cost: number },
+  customer: { phone: string; email: string | null; whatsapp_ok: boolean },
+  text: string,
+  templateParams: { statusCopy: string; reference: string; total: string; trackUrl: string }
 ): Promise<string> {
-  const preferred = customer.whatsapp_ok ? "whatsapp" : "sms";
-  // Preferred channel first; fall back to the other when unconfigured.
-  const attempts: { channel: string; send: () => Promise<{ ok: boolean; error?: string }> }[] =
-    preferred === "whatsapp"
-      ? [
-          { channel: "whatsapp", send: () => sendWhatsAppMessage({ to: customer.phone, text }) },
-          { channel: "sms", send: () => sendSmsViaTermii({ to: customer.phone, text }) },
-        ]
-      : [
-          { channel: "sms", send: () => sendSmsViaTermii({ to: customer.phone, text }) },
-          { channel: "whatsapp", send: () => sendWhatsAppMessage({ to: customer.phone, text }) },
-        ];
-
-  let anyConfigured = false;
-  for (const attempt of attempts) {
-    const result = await attempt.send();
-    if (result.ok) {
-      await logNotification(prisma, {
-        order_id: orderId,
-        recipient: customer.phone,
-        channel: attempt.channel,
-        event: "status_changed",
-        status: "sent",
+  // WhatsApp prefers an approved template (bypasses the 24h customer-service
+  // window) when the operator has set one on the Settings screen; otherwise it
+  // falls back to free-form text.
+  const whatsappSend = async (): Promise<{ ok: boolean; error?: string }> => {
+    const templateName = await getWhatsappTemplateName(prisma);
+    if (templateName) {
+      const language = (await getWhatsappTemplateLanguage(prisma)) || "en";
+      return sendWhatsAppTemplate({
+        to: customer.phone,
+        templateName,
+        language,
+        parameters: [
+          templateParams.statusCopy,
+          templateParams.reference,
+          templateParams.total,
+          templateParams.trackUrl,
+        ],
       });
-      return "sent";
     }
-    if (result.error !== "not configured") anyConfigured = true;
-  }
+    return sendWhatsAppMessage({ to: customer.phone, text });
+  };
 
-  if (!anyConfigured) {
-    // No provider has keys (dev) — one clean "skipped" row.
+  // 1. Email — primary channel.
+  let emailOutcome: string;
+  if (!customer.email) {
+    emailOutcome = "skipped";
     await logNotification(prisma, {
       order_id: orderId,
       recipient: customer.phone,
-      channel: preferred,
+      channel: "email",
       event: "status_changed",
       status: "skipped",
-      error: "no messaging provider configured",
+      error: "no customer email on record",
     });
-    return "skipped";
+  } else {
+    const email = customerStatusEmail(order);
+    const result = await sendEmail({ to: customer.email, subject: email.subject, text: email.text });
+    emailOutcome = result.ok ? "sent" : "failed";
+    await logNotification(prisma, {
+      order_id: orderId,
+      recipient: customer.email,
+      channel: "email",
+      event: "status_changed",
+      status: emailOutcome,
+      error: result.ok ? null : result.error,
+    });
   }
 
-  // Preferred configured but failed, fallback also failed -> log failure.
-  await logNotification(prisma, {
-    order_id: orderId,
-    recipient: customer.phone,
-    channel: preferred,
-    event: "status_changed",
-    status: "failed",
-    error: "all messaging channels failed",
-  });
-  return "failed";
+  // 2. Delivered-only WhatsApp nudge.
+  let whatsappOk = false;
+  if (order.status === "delivered" && customer.whatsapp_ok) {
+    const result = await whatsappSend();
+    whatsappOk = result.ok;
+    await logNotification(prisma, {
+      order_id: orderId,
+      recipient: customer.phone,
+      channel: "whatsapp",
+      event: "status_changed",
+      status: result.ok ? "sent" : "failed",
+      error: result.ok ? null : result.error,
+    });
+  }
+
+  // 3. SMS fallback for a failed email — unless the delivered WhatsApp already
+  // reached the customer (no double-messaging).
+  if (emailOutcome === "failed" && !whatsappOk) {
+    const result = await sendSmsViaTermii({ to: customer.phone, text });
+    await logNotification(prisma, {
+      order_id: orderId,
+      recipient: customer.phone,
+      channel: "sms",
+      event: "status_changed",
+      status: result.ok ? "sent" : "failed",
+      error: result.ok ? null : result.error,
+    });
+  }
+
+  return emailOutcome;
 }
 
 // ---- Event handlers ----
@@ -214,9 +310,15 @@ export function registerNotificationHandlers() {
   on("order.status_changed", (payload) => {
     const { order, customer } = payload as {
       order: { id: string; status: string; final_cost: number };
-      customer: { phone: string; whatsapp_ok: boolean };
+      customer: { phone: string; email: string | null; whatsapp_ok: boolean };
     };
-    void dispatchCustomerMessage(order.id, customer, customerStatusChangedText(order));
+    void dispatchCustomerStatus(
+      order.id,
+      order,
+      customer,
+      customerStatusChangedText(order),
+      customerTemplateParameters(order)
+    );
   });
 
   on("payment.failed", (payload) => {
