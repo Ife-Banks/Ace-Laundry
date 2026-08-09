@@ -106,3 +106,42 @@ export async function sendWhatsAppMessage(opts: {
     { Authorization: `Bearer ${env.whatsappAccessToken}` }
   );
 }
+
+/**
+ * Send an approved template (bypasses the 24-hour customer-service window).
+ * `parameters` are the template's {{1}}, {{2}}, ... body placeholders, in order.
+ */
+export async function sendWhatsAppTemplate(opts: {
+  to: string;
+  templateName: string;
+  language: string;
+  parameters?: string[];
+}): Promise<ProviderResult> {
+  if (!env.whatsappPhoneNumberId || !env.whatsappAccessToken) {
+    return { ok: false, error: "not configured" };
+  }
+  return postJson(
+    `https://graph.facebook.com/v21.0/${env.whatsappPhoneNumberId}/messages`,
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: toInternational(opts.to),
+      type: "template",
+      template: {
+        name: opts.templateName,
+        language: { code: opts.language },
+        ...(opts.parameters && opts.parameters.length > 0
+          ? {
+              components: [
+                {
+                  type: "body",
+                  parameters: opts.parameters.map((p) => ({ type: "text", text: p })),
+                },
+              ],
+            }
+          : {}),
+      },
+    },
+    { Authorization: `Bearer ${env.whatsappAccessToken}` }
+  );
+}

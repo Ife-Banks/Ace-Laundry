@@ -12,6 +12,7 @@ import {
   sendEmail,
   sendSmsViaTermii,
   sendWhatsAppMessage,
+  sendWhatsAppTemplate,
 } from "../services/notifications/providers.js";
 
 const order = {
@@ -108,6 +109,67 @@ describe("provider helpers", () => {
       assert.equal(result.error, "not configured");
     } finally {
       env.slApiKey = original;
+    }
+  });
+
+  it("sends a template message with ordered parameters", async () => {
+    const phoneOriginal = env.whatsappPhoneNumberId;
+    const tokenOriginal = env.whatsappAccessToken;
+    env.whatsappPhoneNumberId = "12345";
+    env.whatsappAccessToken = "tok";
+    const originalFetch = globalThis.fetch;
+    const calls: { url: string; body: any }[] = [];
+    (globalThis as any).fetch = async (url: any, init: any) => {
+      calls.push({ url: String(url), body: JSON.parse(init.body) });
+      return { ok: true } as Response;
+    };
+    try {
+      const result = await sendWhatsAppTemplate({
+        to: "08012345678",
+        templateName: "laundry_update",
+        language: "en",
+        parameters: ["Ace Laundry", "AB12CD34"],
+      });
+      assert.equal(result.ok, true);
+      assert.equal(calls.length, 1, "expected a fetch call");
+      assert.match(calls[0].url, /graph\.facebook\.com/);
+      assert.equal(calls[0].body.type, "template");
+      assert.equal(calls[0].body.to, "2348012345678");
+      assert.equal(calls[0].body.template.name, "laundry_update");
+      assert.equal(calls[0].body.template.language.code, "en");
+      assert.equal(calls[0].body.template.components[0].parameters.length, 2);
+      assert.equal(calls[0].body.template.components[0].parameters[0].text, "Ace Laundry");
+    } finally {
+      env.whatsappPhoneNumberId = phoneOriginal;
+      env.whatsappAccessToken = tokenOriginal;
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("omits the components block when a template has no parameters", async () => {
+    const phoneOriginal = env.whatsappPhoneNumberId;
+    const tokenOriginal = env.whatsappAccessToken;
+    env.whatsappPhoneNumberId = "12345";
+    env.whatsappAccessToken = "tok";
+    const originalFetch = globalThis.fetch;
+    const calls: { body: any }[] = [];
+    (globalThis as any).fetch = async (_url: any, init: any) => {
+      calls.push({ body: JSON.parse(init.body) });
+      return { ok: true } as Response;
+    };
+    try {
+      const result = await sendWhatsAppTemplate({
+        to: "08012345678",
+        templateName: "static_notice",
+        language: "en",
+      });
+      assert.equal(result.ok, true);
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].body.template.components, undefined);
+    } finally {
+      env.whatsappPhoneNumberId = phoneOriginal;
+      env.whatsappAccessToken = tokenOriginal;
+      globalThis.fetch = originalFetch;
     }
   });
 });

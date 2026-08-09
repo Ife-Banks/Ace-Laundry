@@ -1,14 +1,19 @@
 import { Router } from "express";
-import { env } from "../lib/env.js";
 import { prisma } from "../lib/db.js";
+import { getBusinessPhone } from "../services/settingsService.js";
 
 export const publicRouter = Router();
 
 // Public, unauthenticated settings the customer-facing app needs at render
 // time: the business contact number for the Call/WhatsApp button on the order
-// status screen (docs/01 §1.3).
-publicRouter.get("/config", (_req, res) => {
-  res.json({ business_phone: env.businessPhone });
+// status screen (docs/01 §1.3). Editable from the operator Settings screen;
+// falls back to BUSINESS_PHONE env until first saved.
+publicRouter.get("/config", async (_req, res, next) => {
+  try {
+    res.json({ business_phone: await getBusinessPhone(prisma) });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**

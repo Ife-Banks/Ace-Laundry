@@ -100,6 +100,14 @@ model RateConfig {
   iron_only     Int  @db.Integer // naira per item
 }
 
+// Key/value operator-configurable settings (e.g. the business contact number
+// shown to customers). Read by the public /config endpoint and edited from the
+// operator Settings screen. Falls back to env values until first saved.
+model Setting {
+  key   String @id
+  value String
+}
+
 // Audit trail for notification dispatch attempts (and webhook events later).
 model NotificationLog {
   id         String   @id @default(uuid())

@@ -160,3 +160,34 @@ export async function updateRateConfig(input: {
     body: JSON.stringify(input),
   });
 }
+
+export interface OperatorSettings {
+  business_phone: string;
+  whatsapp_test_recipient: string;
+  whatsapp_template_name: string;
+  whatsapp_template_language: string;
+}
+
+export async function fetchOperatorSettings(): Promise<OperatorSettings> {
+  return request<OperatorSettings>("/operator/settings", { headers: authHeader() });
+}
+
+export async function updateOperatorSettings(
+  input: Partial<OperatorSettings>
+): Promise<OperatorSettings> {
+  return request<OperatorSettings>("/operator/settings", {
+    method: "PUT",
+    headers: authHeader(),
+    body: JSON.stringify(input),
+  });
+}
+
+export async function sendWhatsAppTest(
+  parameters?: string[]
+): Promise<{ ok: boolean; error?: string }> {
+  return request<{ ok: boolean; error?: string }>("/operator/settings/test-whatsapp", {
+    method: "POST",
+    headers: authHeader(),
+    body: JSON.stringify({ parameters }),
+  });
+}

@@ -18,6 +18,19 @@ import {
   adjustOrderCost,
 } from "../services/orderService.js";
 import { isPaymentOverdue } from "../services/paymentService.js";
+import {
+  getBusinessPhone,
+  setBusinessPhone,
+  getWhatsappTestRecipient,
+  setWhatsappTestRecipient,
+  getWhatsappTemplateName,
+  setWhatsappTemplateName,
+  getWhatsappTemplateLanguage,
+  setWhatsappTemplateLanguage,
+  BUSINESS_NAME,
+} from "../services/settingsService.js";
+import { sendWhatsAppTemplate } from "../services/notifications/providers.js";
+import { normalizePhone, isValidPhone } from "../lib/phone.js";
 
 export const operatorRouter = Router();
 
@@ -174,6 +187,106 @@ operatorRouter.get("/customers/:phone/orders", requireOperator, async (req, res,
     res.json({
       orders: orders.map((order) => ({ ...order, payment_overdue: isPaymentOverdue(order) })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+operatorRouter.get("/settings", requireOperator, async (_req, res, next) => {
+  try {
+    res.json({
+      business_phone: await getBusinessPhone(prisma),
+      whatsapp_test_recipient: await getWhatsappTestRecipient(prisma),
+      whatsapp_template_name: await getWhatsappTemplateName(prisma),
+      whatsapp_template_language: await getWhatsappTemplateLanguage(prisma),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+operatorRouter.put("/settings", requireOperator, async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const businessPhone =
+      typeof body.business_phone === "string" ? normalizePhone(body.business_phone) : undefined;
+    if (businessPhone !== undefined && !isValidPhone(businessPhone)) {
+      throw new HttpError(
+        400,
+        "validation_error",
+        "Enter a valid 11-digit Nigerian number starting with 0."
+      );
+    }
+    const testRecipient =
+      typeof body.whatsapp_test_recipient === "string"
+        ? normalizePhone(body.whatsapp_test_recipient)
+        : undefined;
+    if (testRecipient !== undefined && testRecipient !== "" && !isValidPhone(testRecipient)) {
+      throw new HttpError(
+        400,
+        "validation_error",
+        "Enter a valid 11-digit Nigerian test number starting with 0."
+      );
+    }
+    const templateName =
+      typeof body.whatsapp_template_name === "string" ? body.whatsapp_template_name.trim() : undefined;
+    const templateLanguage =
+      typeof body.whatsapp_template_language === "string"
+        ? body.whatsapp_template_language.trim()
+        : undefined;
+
+    const writes: Promise<string>[] = [];
+    if (businessPhone !== undefined) writes.push(setBusinessPhone(prisma, businessPhone));
+    if (testRecipient !== undefined) writes.push(setWhatsappTestRecipient(prisma, testRecipient));
+    if (templateName !== undefined) writes.push(setWhatsappTemplateName(prisma, templateName));
+    if (templateLanguage !== undefined)
+      writes.push(setWhatsappTemplateLanguage(prisma, templateLanguage));
+    await Promise.all(writes);
+
+    res.json({
+      business_phone: await getBusinessPhone(prisma),
+      whatsapp_test_recipient: await getWhatsappTestRecipient(prisma),
+      whatsapp_template_name: await getWhatsappTemplateName(prisma),
+      whatsapp_template_language: await getWhatsappTemplateLanguage(prisma),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+operatorRouter.post("/settings/test-whatsapp", requireOperator, async (req, res, next) => {
+  try {
+    const recipient = await getWhatsappTestRecipient(prisma);
+    if (!recipient) {
+      throw new HttpError(
+        400,
+        "validation_error",
+        "Set a WhatsApp test recipient in Settings first."
+      );
+    }
+    const templateName = await getWhatsappTemplateName(prisma);
+    if (!templateName) {
+      throw new HttpError(
+        400,
+        "validation_error",
+        "Set a WhatsApp template name in Settings first."
+      );
+    }
+    const language = (await getWhatsappTemplateLanguage(prisma)) || "en";
+    const body = (req.body ?? {}) as { parameters?: unknown };
+    const parameters = Array.isArray(body.parameters)
+      ? body.parameters.filter((p): p is string => typeof p === "string")
+      : [];
+    const result = await sendWhatsAppTemplate({
+      to: recipient,
+      templateName,
+      language,
+      parameters: parameters.length > 0 ? parameters : [BUSINESS_NAME],
+    });
+    if (!result.ok) {
+      throw new HttpError(502, "whatsapp_send_failed", result.error ?? "WhatsApp send failed.");
+    }
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

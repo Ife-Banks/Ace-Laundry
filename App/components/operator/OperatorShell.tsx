@@ -53,6 +53,16 @@ export default function OperatorShell({ children }: { children: ReactNode }) {
           >
             Rates
           </Link>
+          <Link
+            href="/operator/settings"
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+              pathname.startsWith("/operator/settings")
+                ? "bg-primary text-white"
+                : "text-ink hover:bg-surface"
+            }`}
+          >
+            Settings
+          </Link>
           <button
             type="button"
             onClick={() => {
