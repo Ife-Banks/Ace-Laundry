@@ -18,14 +18,14 @@ import OperatorShell from "@/components/operator/OperatorShell";
 import { PaymentBadge, StatusBadge } from "@/components/operator/Badges";
 import { useAsyncEffect } from "@/lib/useAsyncEffect";
 
-const STATUSES: (OrderStatus | "")[] = [
-  "",
-  "booked",
-  "picked_up",
-  "in_progress",
-  "ready_for_delivery",
-  "delivered",
-  "cancelled",
+const TABS: { value: OrderStatus | ""; label: string }[] = [
+  { value: "", label: "All" },
+  { value: "booked", label: "New" },
+  { value: "picked_up", label: "Picked up" },
+  { value: "in_progress", label: "In progress" },
+  { value: "ready_for_delivery", label: "Ready" },
+  { value: "delivered", label: "Delivered" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 const PAYMENTS: (PaymentStatus | "")[] = ["", "pending", "paid", "unpaid", "failed"];
 
@@ -38,7 +38,7 @@ export default function OperatorOrdersPage() {
   const [orders, setOrders] = useState<OrderWithCustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [status, setStatus] = useState<OrderStatus | "">("");
+  const [status, setStatus] = useState<OrderStatus | "">("booked");
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | "">("");
   const [phone, setPhone] = useState("");
   const [sort, setSort] = useState<"pickup" | "created">("pickup");
@@ -90,22 +90,25 @@ export default function OperatorOrdersPage() {
             placeholder="Search by phone number…"
             className="w-full min-h-11 rounded-lg border border-line bg-white px-3 py-2 text-base text-ink placeholder:text-ink-muted focus:border-primary focus:outline-none"
           />
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold text-ink-muted">Status</span>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as OrderStatus | "")}
-                className="w-full min-h-10 rounded-lg border border-line bg-white px-2 py-1.5 text-sm text-ink focus:border-primary focus:outline-none"
+          <div className="flex flex-wrap gap-1">
+            {TABS.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setStatus(tab.value)}
+                aria-pressed={status === tab.value}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  status === tab.value
+                    ? "bg-primary text-white"
+                    : "bg-white text-ink hover:bg-line/50"
+                }`}
               >
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s === "" ? "All statuses" : s.replace(/_/g, " ")}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <label className="block w-full sm:w-auto sm:min-w-40">
               <span className="mb-1 block text-xs font-semibold text-ink-muted">Payment</span>
               <select
                 value={paymentStatus}
@@ -119,21 +122,21 @@ export default function OperatorOrdersPage() {
                 ))}
               </select>
             </label>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs font-semibold text-ink-muted">Sort</span>
-            {(["pickup", "created"] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSort(s)}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  sort === s ? "bg-primary text-white" : "bg-white text-ink hover:bg-line/50"
-                }`}
-              >
-                {s === "pickup" ? "Pickup window" : "Newest"}
-              </button>
-            ))}
+            <div className="flex items-center gap-1 pb-1">
+              <span className="text-xs font-semibold text-ink-muted">Sort</span>
+              {(["pickup", "created"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSort(s)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    sort === s ? "bg-primary text-white" : "bg-white text-ink hover:bg-line/50"
+                  }`}
+                >
+                  {s === "pickup" ? "Pickup window" : "Newest"}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
