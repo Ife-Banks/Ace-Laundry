@@ -5,6 +5,14 @@ function num(name: string, fallback: number): number {
   return Number.isFinite(v) && v > 0 ? v : fallback;
 }
 
+// Render injects cross-service URLs as bare hostnames (e.g.
+// ace-laundry-web.onrender.com). Accept either a bare host or a full URL.
+function url(name: string, fallback: string): string {
+  const v = process.env[name];
+  if (!v) return fallback;
+  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: num("PORT", 4000),
@@ -13,7 +21,7 @@ export const env = {
   // Session secret used to sign the operator auth token. Change before going live.
   operatorSessionSecret: process.env.OPERATOR_SESSION_SECRET ?? "dev-operator-session-secret",
   // Public base URL of the Next.js app (used as Flutterwave redirect target).
-  frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:3000",
+  frontendUrl: url("FRONTEND_URL", "http://localhost:3000"),
   // Business contact number shown to customers as a Call/WhatsApp button.
   // Stored as a Nigerian local number, e.g. "08123456789".
   businessPhone: process.env.BUSINESS_PHONE ?? "",
@@ -40,6 +48,6 @@ export const env = {
   // Origin SendLib requires on requests. SendLib gates each API key by an
   // allowed-origins list; our server-to-server calls carry no browser origin,
   // so we send this header explicitly and it must be whitelisted for the key.
-  slOrigin: process.env.SL_ORIGIN ?? "http://localhost:4000",
+  slOrigin: url("SL_ORIGIN", "http://localhost:4000"),
   operatorEmail: process.env.OPERATOR_EMAIL ?? "",
 };

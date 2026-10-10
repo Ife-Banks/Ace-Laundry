@@ -1,5 +1,5 @@
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+export const API_URL = /^https?:\/\//i.test(API_BASE) ? API_BASE : `https://${API_BASE}`;
 
 export type ServiceType = "wash_and_fold" | "iron_only";
 export type PickupWindow = "morning" | "afternoon" | "evening";
